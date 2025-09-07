@@ -1,0 +1,88 @@
+Code for defect detection on MATLAB:
+% --- Part 1: Load and Train the Model ---
+% Load the dataset
+datasetPath = 'C:\Users\viren\OneDrive\Desktop\Data';  % Path to your dataset
+imds = imageDatastore(datasetPath, ...
+    'IncludeSubfolders', true, ...
+    'LabelSource', 'foldernames');
+
+% Since the dataset is small, use cross-validation instead of a train-validation split
+inputSize = [224 224 3];
+
+% Define a small CNN model suitable for a small dataset
+layers = [
+    imageInputLayer(inputSize, 'Normalization', 'zerocenter')
+
+    convolution2dLayer(3, 8, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+
+    maxPooling2dLayer(2, 'Stride', 2)
+
+    convolution2dLayer(3, 16, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+
+    maxPooling2dLayer(2, 'Stride', 2)
+
+    convolution2dLayer(3, 32, 'Padding', 'same')
+    batchNormalizationLayer
+    reluLayer
+
+    fullyConnectedLayer(2)
+    softmaxLayer
+    classificationLayer];
+
+% Set up data augmentation with colour preprocessing to convert all images to RGB
+augmentedImds = augmentedImageDatastore(inputSize, imds, ...
+    'DataAugmentation', imageDataAugmenter('RandRotation', [-10, 10], ...
+                                           'RandXTranslation', [-5, 5], ...
+                                           'RandYTranslation', [-5, 5]), ...
+    'ColorPreprocessing', 'gray2rgb');
+
+% Specify training options
+options = trainingOptions('sgdm', ...
+    'MaxEpochs', 15, ...
+    'MiniBatchSize', 8, ...
+    'InitialLearnRate', 1e-4, ...
+    'Plots', 'training-progress', ...
+    'Verbose', false);
+
+% Train the network
+net = trainNetwork(augmentedImds, layers, options);
+
+% Evaluate the model on the same data (useful for small datasets)
+YPred = classify(net, augmentedImds);
+YActual = imds.Labels;
+
+% Calculate accuracy
+accuracy = mean(YPred == YActual);
+disp(['Model accuracy on the dataset: ' num2str(accuracy * 100) '%']);
+
+
+% --- Part 2: Defect Detection on New Images ---
+
+% Set the path for the folder containing new images for testing
+newImagesPath = 'C:\Users\viren\OneDrive\Desktop\NewImages';  % Path to your new images
+newImds = imageDatastore(newImagesPath);
+
+% Loop through each new image, classify it, and display the result
+for i = 1:numel(newImds.Files)
+    % Read the image
+    img = readimage(newImds, i);
+    
+    % Resize the image to the network input size and ensure it's RGB
+    imgResized = imresize(img, inputSize(1:2));
+    if size(imgResized, 3) == 1
+        imgResized = repmat(imgResized, 1, 1, 3);  % Convert grayscale to RGB
+    end
+
+    % Predict the label of the image
+    label = classify(net, imgResized);
+    
+    % Display the image and prediction
+    figure;
+    imshow(img);
+    title(['Prediction: ' char(label)], 'FontSize', 14, 'Color', 'blue');
+end
+
